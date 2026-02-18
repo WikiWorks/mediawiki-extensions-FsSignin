@@ -28,8 +28,8 @@ use MediaWiki;
 use SpecialPage;
 use ExtensionRegistry;
 
-class Hooks {
-
+class Hooks
+{
 	/**
 	 * Grab the page request early
 	 * See https://www.mediawiki.org/wiki/Manual:Hooks/BeforeInitialize
@@ -43,74 +43,83 @@ class Hooks {
 	 *
 	 * Note that $title has to be passed by ref so we can replace it.
 	 */
-	public static function doSignin ( Title &$title, $article, OutputPage $out, User $user,
-			WebRequest $request, MediaWiki $mw ) {
-
+	public static function doSignin(
+		Title &$title,
+		$article,
+		OutputPage $out,
+		User $user,
+		WebRequest $request,
+		MediaWiki $mw
+	) {
 		global $wgOpenIDEndpoint;
 
-		$sessionId = null;
-	 	$sessionId = @$_COOKIE['fssessionid'];
-		$wikiSessionId = @$_COOKIE['wiki_en_session'];
+		$sessionId = @$_COOKIE["fssessionid"];
+		// $wikiSessionId = @$_COOKIE["wiki_en_session"];
 
-		if ($wikiSessionId) {
-			// we want to signin to the other language wikis
-		}
+		// we want to signin to the other language wikis
+		// if ($wikiSessionId) {
+		//    
+		// }
 
-		// bb46c487-5df6-4ead-9ebc-289b44a6f0c6-prod
-		// echo "Looking for session $sessionId";
-	 	if ( !is_null( $sessionId ) && !empty( $sessionId) ) {
-
-			if ( $GLOBALS['wgPluggableAuth_EnableAutoLogin'] ) {
+		if (!is_null($sessionId) && !empty($sessionId)) {
+			if ($GLOBALS["wgPluggableAuth_EnableAutoLogin"]) {
 				return;
 			}
-			if ( !$out->getUser()->isAnon() ) {
+
+			if (!$out->getUser()->isAnon()) {
 				// $out->getUser()->mName is the username
 				return;
 			}
+
 			// make sure we test if the session is expired before we auto-login
 			// example 1135c3c1-4dc9-477c-b5dd-c41c57f6bedf-prod
-			$ch = curl_init("https://$wgOpenIDEndpoint/service/ident/cis/cis-public-api/v4/session/$sessionId");
+			
+			// @ATTENTION use "https://beta.familysearch.org/service/ident/session/sessions/CURRENT"
+			// for beta
+			// @see https://www.familysearch.org/service/ident/session/resource_SessionEndpoints.html
+			$ch = curl_init(
+				"https://www.familysearch.org/service/ident/session/sessions/CURRENT",
+			);
 			// When we curl_exec, return a string rather than output directly
-			curl_setopt ($ch, CURLOPT_RETURNTRANSFER, true);
+			curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 			// Ask for JSON instead of XML
-			$headers = ["Accept: application/json"];
-			curl_setopt ($ch, CURLOPT_HTTPHEADER, $headers);
+			$headers = [
+				"Accept: application/session-v1+json",
+				"Authorization: Bearer $sessionId",
+			];
+			curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
 			// Send our session cookie in the request
-			curl_setopt ($ch, CURLOPT_COOKIE, "fssessionid=$sessionId");
+			# Removed since we're using an Authorization header vs. cookie
+			#curl_setopt ($ch, CURLOPT_COOKIE, "fssessionid=$sessionId");
+
 			$json = curl_exec($ch);
 			curl_close($ch);
 			$objJson = json_decode($json);
 
-			// print '<pre>'; var_dump($objJson); print '</pre>'; exit();
-			// make sure we have a valid user before we auto-login
-			// if the session is stale, we'll have a statusCode of 453
-			// if there is no session, we'll have a user count of zero
-			if (
-			     ( !empty($objJson->statusCode) && ( $objJson->statusCode == 453 ) ) ||
-			     ( !count($objJson->users) )
-			   ) {
+			if (empty($objJson->userName)) {
 				return;
 			}
 
 			$loginSpecialPages = ExtensionRegistry::getInstance()->getAttribute(
-				'PluggableAuthLoginSpecialPages'
+				"PluggableAuthLoginSpecialPages",
 			);
-			foreach ( $loginSpecialPages as $page ) {
-				if ( $title->isSpecial( $page ) ) {
+			foreach ($loginSpecialPages as $page) {
+				if ($title->isSpecial($page)) {
 					return;
 				}
 			}
 			$oldTitle = $title;
-			$title = SpecialPage::getTitleFor( 'Userlogin' );
-			header( 'Location: ' . $title->getFullURL( [
-				'returnto' => $oldTitle,
-				'returntoquery' => $request->getRawQueryString()
-			] ) );
-			exit;
-
+			$title = SpecialPage::getTitleFor("Userlogin");
+			header(
+				"Location: " .
+					$title->getFullURL([
+						"returnto" => $oldTitle,
+						"returntoquery" => $request->getRawQueryString(),
+					]),
+			);
+			exit();
 		} else {
 			// anonymous user; do nothing
 		}
 	}
-
 }
